@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+.coverage.*
+.DS_Store
+.pdf_index.json
+
+pdfs/*
+!pdfs/.gitkeep
