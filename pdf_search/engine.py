@@ -2,6 +2,7 @@ import json
 import logging
 import math
 import re
+import shlex
 from collections import Counter
 from pathlib import Path
 
@@ -16,7 +17,8 @@ def words(text):
 def load_directories(config_path):
     config_path = Path(config_path).resolve()
     directories = []
-    in_directories = False
+    started = False
+    inline = False
 
     for line in config_path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
@@ -24,18 +26,62 @@ def load_directories(config_path):
         if not line or line.startswith("#"):
             continue
 
-        if line == "directories:":
-            in_directories = True
+        if not started:
+            if not line.startswith("directories:"):
+                raise ValueError("Некорректный файл конфигурации")
+
+            started = True
+            value = line[len("directories:"):].strip()
+
+            if not value or value.startswith("#"):
+                continue
+
+            match = re.fullmatch(r"\[(.*)\](?:\s+#.*)?", value)
+
+            if match is None:
+                raise ValueError("Некорректный файл конфигурации")
+
+            inline = True
+            parser = shlex.shlex(match.group(1), posix=True)
+            parser.whitespace = ","
+            parser.whitespace_split = True
+            parser.commenters = ""
+
+            try:
+                paths = [path.strip() for path in parser]
+            except ValueError as error:
+                raise ValueError(
+                    "Некорректный файл конфигурации"
+                ) from error
+
+            for path in paths:
+                if not path:
+                    raise ValueError("Не указан путь к каталогу")
+
+                directories.append(
+                    (config_path.parent / path).resolve()
+                )
+
             continue
 
-        if not in_directories or not line.startswith("- "):
+        if inline or not line.startswith("- "):
             raise ValueError("Некорректный файл конфигурации")
 
-        folder = line[2:].strip().strip("\"'")
+        try:
+            parts = shlex.split(line[2:], comments=True)
+        except ValueError as error:
+            raise ValueError(
+                "Некорректный путь к каталогу"
+            ) from error
+
+        folder = " ".join(parts).strip()
+
         if not folder:
             raise ValueError("Не указан путь к каталогу")
 
-        directories.append((config_path.parent / folder).resolve())
+        directories.append(
+            (config_path.parent / folder).resolve()
+        )
 
     if not directories:
         raise ValueError("Не указаны каталоги поиска")
@@ -82,7 +128,27 @@ class PDFSearch:
         documents = []
         found = set()
 
+        used_labels = set()
+        all_names = {folder.name for folder in self.directories}
+        labels = []
+
         for folder in self.directories:
+            label = folder.name
+            number = 2
+
+            if label in used_labels:
+                while (
+                    f"{label}_{number}" in used_labels
+                    or f"{label}_{number}" in all_names
+                ):
+                    number += 1
+
+                label = f"{label}_{number}"
+
+            labels.append(label)
+            used_labels.add(label)
+
+        for folder, label in zip(self.directories, labels):
             if not folder.is_dir():
                 raise FileNotFoundError(f"Каталог не найден: {folder}")
 
@@ -127,8 +193,13 @@ class PDFSearch:
                     "text": text,
                 }
 
+                display_path = filename.relative_to(folder).as_posix()
+
+                if len(self.directories) > 1:
+                    display_path = f"{label}/{display_path}"
+
                 documents.append({
-                    "file": filename.relative_to(folder).as_posix(),
+                    "file": display_path,
                     "counts": Counter(words(text)),
                 })
 
