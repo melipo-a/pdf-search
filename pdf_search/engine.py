@@ -128,7 +128,27 @@ class PDFSearch:
         documents = []
         found = set()
 
+        used_labels = set()
+        all_names = {folder.name for folder in self.directories}
+        labels = []
+
         for folder in self.directories:
+            label = folder.name
+            number = 2
+
+            if label in used_labels:
+                while (
+                    f"{label}_{number}" in used_labels
+                    or f"{label}_{number}" in all_names
+                ):
+                    number += 1
+
+                label = f"{label}_{number}"
+
+            labels.append(label)
+            used_labels.add(label)
+
+        for folder, label in zip(self.directories, labels):
             if not folder.is_dir():
                 raise FileNotFoundError(f"Каталог не найден: {folder}")
 
@@ -173,8 +193,13 @@ class PDFSearch:
                     "text": text,
                 }
 
+                display_path = filename.relative_to(folder).as_posix()
+
+                if len(self.directories) > 1:
+                    display_path = f"{label}/{display_path}"
+
                 documents.append({
-                    "file": filename.relative_to(folder).as_posix(),
+                    "file": display_path,
                     "counts": Counter(words(text)),
                 })
 
