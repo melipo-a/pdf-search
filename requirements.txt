@@ -1,0 +1,6 @@
+pypdf
+pytest
+pytest-cov
+flake8
+pymongo>=4.14,<5
+mongomock>=4
