@@ -49,7 +49,9 @@ def test_search_response(api):
 
 
 def test_no_results(api):
-    with urlopen(f"{api}/documents?q=математика") as response:
+    query = urlencode({"q": "математика"})
+
+    with urlopen(f"{api}/documents?{query}") as response:
         assert response.status == 200
         assert json.load(response) == []
 
