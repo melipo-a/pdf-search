@@ -1,0 +1,56 @@
+openapi: 3.0.3
+
+info:
+  title: Поиск по PDF-файлам
+  version: 1.0.0
+  description: REST API для поиска по текстовым PDF-файлам
+
+paths:
+  /documents:
+    get:
+      summary: Поиск документов
+      description: Возвращает до 10 документов по убыванию релевантности
+      parameters:
+        - name: q
+          in: query
+          required: true
+          description: Поисковая фраза
+          schema:
+            type: string
+            minLength: 1
+            pattern: '\S'
+          example: охрана труда
+
+      responses:
+        '200':
+          description: Результаты поиска
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 10
+                items:
+                  type: object
+                  required:
+                    - file
+                  properties:
+                    file:
+                      type: string
+                      description: Путь к PDF-файлу
+              example:
+                - file: safety.pdf
+                - file: manual.pdf
+
+        '400':
+          description: Некорректный поисковый запрос
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - error
+                properties:
+                  error:
+                    type: string
+              example:
+                error: Укажите поисковый запрос
