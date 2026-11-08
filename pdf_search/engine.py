@@ -2,7 +2,6 @@ import json
 import logging
 import math
 import re
-import shlex
 from collections import Counter
 from pathlib import Path
 
@@ -12,6 +11,128 @@ from pypdf.errors import PdfReadError
 
 def words(text):
     return re.findall(r"[^\W_]+", text.lower())
+
+
+def remove_yaml_comment(value):
+    quote = None
+    index = 0
+
+    while index < len(value):
+        char = value[index]
+
+        if quote == "'":
+            if char == "'":
+                if (
+                    index + 1 < len(value)
+                    and value[index + 1] == "'"
+                ):
+                    index += 2
+                    continue
+                quote = None
+
+        elif quote == '"':
+            if char == "\\":
+                index += 2
+                continue
+            if char == '"':
+                quote = None
+
+        else:
+            if char == "#" and (
+                index == 0 or value[index - 1].isspace()
+            ):
+                return value[:index].strip()
+
+            if char in ("'", '"'):
+                before = value[:index].rstrip()
+
+                if not before or before.endswith(("[", ",")):
+                    quote = char
+
+        index += 1
+
+    return value.strip()
+
+
+def parse_yaml_path(value):
+    value = value.strip()
+
+    if not value:
+        raise ValueError("Не указан путь к каталогу")
+
+    if value.startswith('"'):
+        try:
+            path = json.loads(value)
+        except json.JSONDecodeError as error:
+            raise ValueError(
+                "Некорректный путь к каталогу"
+            ) from error
+
+        if not isinstance(path, str):
+            raise ValueError("Некорректный путь к каталогу")
+
+    elif value.startswith("'"):
+        if len(value) < 2 or not value.endswith("'"):
+            raise ValueError("Некорректный путь к каталогу")
+
+        inner = value[1:-1]
+
+        if re.fullmatch(r"(?:[^']|'')*", inner) is None:
+            raise ValueError("Некорректный путь к каталогу")
+
+        path = inner.replace("''", "'")
+
+    else:
+        path = value
+
+    if not path:
+        raise ValueError("Не указан путь к каталогу")
+
+    return path
+
+
+def parse_inline_paths(value):
+    items = []
+    start = 0
+    index = 0
+    quote = None
+
+    while index < len(value):
+        char = value[index]
+
+        if quote == "'":
+            if char == "'":
+                if (
+                    index + 1 < len(value)
+                    and value[index + 1] == "'"
+                ):
+                    index += 2
+                    continue
+                quote = None
+
+        elif quote == '"':
+            if char == "\\":
+                index += 2
+                continue
+            if char == '"':
+                quote = None
+
+        else:
+            if char in ("'", '"'):
+                if not value[start:index].strip():
+                    quote = char
+
+            elif char == ",":
+                items.append(parse_yaml_path(value[start:index]))
+                start = index + 1
+
+        index += 1
+
+    if quote is not None:
+        raise ValueError("Некорректный файл конфигурации")
+
+    items.append(parse_yaml_path(value[start:]))
+    return items
 
 
 def load_directories(config_path):
@@ -31,33 +152,20 @@ def load_directories(config_path):
                 raise ValueError("Некорректный файл конфигурации")
 
             started = True
-            value = line[len("directories:"):].strip()
+            value = remove_yaml_comment(
+                line[len("directories:"):]
+            )
 
-            if not value or value.startswith("#"):
+            if not value:
                 continue
 
-            match = re.fullmatch(r"\[(.*)\](?:\s+#.*)?", value)
-
-            if match is None:
+            if not value.startswith("[") or not value.endswith("]"):
                 raise ValueError("Некорректный файл конфигурации")
 
             inline = True
-            parser = shlex.shlex(match.group(1), posix=True)
-            parser.whitespace = ","
-            parser.whitespace_split = True
-            parser.commenters = ""
-
-            try:
-                paths = [path.strip() for path in parser]
-            except ValueError as error:
-                raise ValueError(
-                    "Некорректный файл конфигурации"
-                ) from error
+            paths = parse_inline_paths(value[1:-1])
 
             for path in paths:
-                if not path:
-                    raise ValueError("Не указан путь к каталогу")
-
                 directories.append(
                     (config_path.parent / path).resolve()
                 )
@@ -67,20 +175,11 @@ def load_directories(config_path):
         if inline or not line.startswith("- "):
             raise ValueError("Некорректный файл конфигурации")
 
-        try:
-            parts = shlex.split(line[2:], comments=True)
-        except ValueError as error:
-            raise ValueError(
-                "Некорректный путь к каталогу"
-            ) from error
-
-        folder = " ".join(parts).strip()
-
-        if not folder:
-            raise ValueError("Не указан путь к каталогу")
+        value = remove_yaml_comment(line[2:])
+        path = parse_yaml_path(value)
 
         directories.append(
-            (config_path.parent / folder).resolve()
+            (config_path.parent / path).resolve()
         )
 
     if not directories:
