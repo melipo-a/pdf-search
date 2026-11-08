@@ -4,6 +4,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 from pdf_search.engine import PDFSearch
+from pdf_search.storage import MongoStorage
 
 
 class SearchHandler(BaseHTTPRequestHandler):
@@ -39,7 +40,8 @@ class SearchHandler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     config = Path(__file__).resolve().parent / "config.yml"
-    SearchHandler.engine = PDFSearch(config)
+    storage = MongoStorage()
+    SearchHandler.engine = PDFSearch(config, storage=storage)
 
     server = HTTPServer(("localhost", 8008), SearchHandler)
     print("Сервер запущен: http://localhost:8008")
