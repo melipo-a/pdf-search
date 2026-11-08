@@ -49,9 +49,10 @@ def extract_pdf_text(filename):
 
 
 class PDFSearch:
-    def __init__(self, config_path, cache_path=None):
+    def __init__(self, config_path, cache_path=None, storage=None):
         self.config_path = Path(config_path).resolve()
         self.directories = load_directories(self.config_path)
+        self.storage = storage
 
         if cache_path is None:
             cache_path = self.config_path.parent / ".pdf_index.json"
@@ -64,12 +65,15 @@ class PDFSearch:
         self.update_index()
 
     def update_index(self):
-        try:
-            old_cache = json.loads(
-                self.cache_path.read_text(encoding="utf-8")
-            )
-        except (FileNotFoundError, json.JSONDecodeError):
-            old_cache = {}
+        if self.storage is not None:
+            old_cache = self.storage.load()
+        else:
+            try:
+                old_cache = json.loads(
+                    self.cache_path.read_text(encoding="utf-8")
+                )
+            except (FileNotFoundError, json.JSONDecodeError):
+                old_cache = {}
 
         if not isinstance(old_cache, dict):
             old_cache = {}
@@ -128,10 +132,13 @@ class PDFSearch:
                     "counts": Counter(words(text)),
                 })
 
-        self.cache_path.write_text(
-            json.dumps(new_cache, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        if self.storage is not None:
+            self.storage.save(new_cache)
+        else:
+            self.cache_path.write_text(
+                json.dumps(new_cache, ensure_ascii=False),
+                encoding="utf-8",
+            )
 
         self.documents = documents
         self._build_vectors()
